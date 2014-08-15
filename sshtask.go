@@ -81,12 +81,12 @@ func sshTask(a attempt, nRunning *lockedint.TInt, failc, successc chan attempt,
 	case <-time.After(wait):
 		a.Err = &TimeoutError{}
 		a.Tasknum = tasknum
-                failc <- a
+		failc <- a
 	}
 	/* Decrement the counter of alive sshtasks */
 	nRunning.Dec()
-        /* Pause for rate-limiting. */
-        if pause > 0 {
-                time.Sleep(pause)
-        }
+	/* Pause for rate-limiting. */
+	if pause > 0 {
+		time.Sleep(pause)
+	}
 }

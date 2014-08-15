@@ -79,10 +79,8 @@ func channelAttemptMaker(templates *tslist.List, passwordc chan string,
 			for e := templates.Head(); nil != e; e = e.Next() {
 				a, ok := e.Value().(*template)
 				if !ok {
-					log.Printf("Corruption in template " +
-						"list.  Please notify the " +
-						"developers.")
-					os.Exit(-14)
+					printTemplateNotOk(e)
+					es.Exit(-14)
 				}
 				attemptc <- a.New(p, version)
 			}

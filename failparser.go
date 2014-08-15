@@ -19,11 +19,15 @@ func parseFail(a attempt, rc chan attempt, errdb bool, nA *lockedint.TInt,
 	/* Work out the type of error */
 	switch e := a.Err.(type) {
 	case *net.OpError:
-		handleNetOpError(a, rc, nA, ts)
+		if !handleNetOpError(a, rc, nA, ts) {
+			goto Unknown
+		}
 	case *TimeoutError:
 		removeHost(ts, a, "took too long", nA)
 	case error:
-		handleErrorString(a, rc, nA, ts)
+		if !handleErrorString(a, rc, nA, ts) {
+			goto Unknown
+		}
 	default:
 		_ = e /* DEBUG */
 		goto Unknown
@@ -36,7 +40,7 @@ Unknown:
 
 /* Handle *net.OpError errors */
 func handleNetOpError(a attempt, rc chan attempt, nA *lockedint.TInt,
-	ts *tslist.List) {
+	ts *tslist.List) bool {
 	/* Error string */
 	s := a.Err.Error()
 	switch {
@@ -46,19 +50,34 @@ func handleNetOpError(a attempt, rc chan attempt, nA *lockedint.TInt,
 	case strings.HasSuffix(s, "connection timed out"):
 		/* No SYNACK */
 		removeHost(ts, a, "connection timed out", nA)
+	default:
+		return false
 	}
+	return true
 }
 
 /* Handle generic error strings */
 func handleErrorString(a attempt, rc chan attempt, nA *lockedint.TInt,
-	ts *tslist.List) {
+	ts *tslist.List) bool {
 	s := a.Err.Error()
 	switch {
-	case strings.HasPrefix(s, "ssh: unable to authenticate") &&
-		strings.HasSuffix(s, "no supported methods remain"):
+	case strings.HasPrefix(s, "ssh: handshake failed: ssh: unable "+
+		"to authenticate") && strings.HasSuffix(s, "no supported "+
+		"methods remain"):
 		/* Auth failed, Decrement the number of attempts in the wild */
 		nA.Dec()
+	case strings.HasSuffix(s, "ssh: handshake failed: ssh: no common "+
+		"algorithms"):
+		removeHost(ts, a, "no common algorithms", nA)
+	case strings.HasSuffix(s, "ssh: handshake failed: ssh: invalid "+
+		"packet length, packet too large"):
+		removeHost(ts, a, "packet to large", nA)
+	case strings.HasSuffix(s, "ssh: handshake failed: EOF"):
+		removeHost(ts, a, "unexpected EOF", nA)
+	default:
+		return false
 	}
+	return true
 
 }
 

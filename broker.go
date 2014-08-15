@@ -99,7 +99,7 @@ func broker(internalc, filec, stdinc chan attempt, ntask int, sf *os.File,
 		} else {
 			/* Search list for matching template */
 			for e := ts.Head(); e != nil; e = e.Next() {
-				v, ok := e.Value().(*attempt)
+				v, ok := e.Value().(*template)
 				if !ok {
 					printTemplateNotOk(e)
 					os.Exit(-15)

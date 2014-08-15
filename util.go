@@ -2,10 +2,10 @@
 package main
 
 import (
-        "github.com/kd5pbo/lockedint"
-        "github.com/kd5pbo/tslist"
-        "log"
-        "os"
+	"github.com/kd5pbo/lockedint"
+	"github.com/kd5pbo/tslist"
+	"log"
+	"os"
 )
 
 /* textIfBlank returs <blank> if s is "", and s otherwise. */
@@ -27,7 +27,7 @@ func removeHost(ts *tslist.List, a attempt, r string, nA *lockedint.TInt) {
 	/* Mark a bunch of hosts for removal */
 	for e := ts.Head(); e != nil; e = e.Next() {
 		if c, ok := e.Value().(*template); !ok {
-                        printTemplateNotOk(e)
+			printTemplateNotOk(e)
 			os.Exit(-10)
 		} else if ok && c.Host == a.Host {
 			e.RemoveMark()
@@ -39,10 +39,11 @@ func removeHost(ts *tslist.List, a attempt, r string, nA *lockedint.TInt) {
 	nA.Dec()
 }
 
-/* Prints an error that the Value stored by e (a *tslist.Element) is not a template.  */
+/* Prints an error that the Value stored by e (a *tslist.Element) is not a
+template.  */
 func printTemplateNotOk(e *tslist.Element) {
 	log.Printf("Corruption in template list.  This is a bad bug.  "+
 		"Please report the following to the developers (sanatized "+
-		"as appropriate: [e: %#v | t (%T): %#v]", e, e.Value(),
+		"as appropriate): [e: %#v][t: (%T): %#v]", e, e.Value(),
 		e.Value())
 }
