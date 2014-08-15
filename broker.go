@@ -56,7 +56,7 @@ func broker(internalc, filec, stdinc chan attempt, ntask int, sf *os.File,
 	totalTasks := 0
 	/* Closure (yuck) to die when we're out of attempts and all channels
 	   are closed */
-        doneNote := false
+	doneNote := false
 	dieIfDone := func() {
 		/* Don't execute if something's still going on */
 		if stdinc == nil && internalc == nil && filec == nil {
@@ -67,7 +67,7 @@ func broker(internalc, filec, stdinc chan attempt, ntask int, sf *os.File,
 				log.Printf("Giving %v tasks time to "+
 					"finish.  This shouldn't take much "+
 					"more than %v.", nRunning.Val(), wait)
-                                        doneNote = true
+				doneNote = true
 			}
 		}
 	}
@@ -86,8 +86,6 @@ func broker(internalc, filec, stdinc chan attempt, ntask int, sf *os.File,
 				"really bad bug.  Please tell the developers.")
 			os.Exit(-13)
 		}
-		/* Print a success message. */
-		nAttempts.Dec()
 		/* Print a success message */
 		log.Printf("SUCCESS: %v@%v %v", a.User, a.Host,
 			textIfBlank(a.Pass))
@@ -95,8 +93,25 @@ func broker(internalc, filec, stdinc chan attempt, ntask int, sf *os.File,
 		if sf != nil {
 			logSuccess(sf, a)
 		}
-		/* TODO: Remove host and username from queue */
-		/* TODO: Handle onepw */
+		/* Remove either the host or template, as appropriate */
+		if onepw {
+			removeHost(ts, a, "", nAttempts)
+		} else {
+			/* Search list for matching template */
+			for e := ts.Head(); e != nil; e = e.Next() {
+				v, ok := e.Value().(*attempt)
+				if !ok {
+					printTemplateNotOk(e)
+					os.Exit(-15)
+				}
+				/* Remove template when found */
+				if v.User == a.User && v.Host == a.Host {
+					e.Remove()
+				}
+			}
+			/* One fewer attempt is in play */
+			nAttempts.Dec()
+		}
 		_ = onepw /* DEBUG */
 		dieIfDone()
 	}

@@ -8,7 +8,6 @@ import (
 	"github.com/kd5pbo/tslist"
 	"log"
 	"net"
-	"os"
 	"strings"
 )
 
@@ -61,31 +60,6 @@ func handleErrorString(a attempt, rc chan attempt, nA *lockedint.TInt,
 		nA.Dec()
 	}
 
-}
-
-/* Remove a host from the template lis, give the reason as r and decrement
-nA. */
-func removeHost(ts *tslist.List, a attempt, r string, nA *lockedint.TInt) {
-	/* Tell the user what's going on */
-	log.Printf("[%v] Removing %v from attack queue: %v", a.Tasknum, a.Host,
-		r)
-	/* Mark a bunch of hosts for removal */
-	for e := ts.Head(); e != nil; e = e.Next() {
-		if c, ok := e.Value().(*template); !ok {
-			log.Printf("Corruption in template list.  This is a "+
-				"bad bug.  Please report the following to "+
-				"the developers (sanatized as appropriate: "+
-				"[e: %#v | t (%T): %#v]", e, e.Value(),
-				e.Value())
-			os.Exit(-10)
-		} else if ok && c.Host == a.Host {
-			e.RemoveMark()
-		}
-	}
-	/* Remove the marked hosts */
-	ts.RemoveMarked()
-	/* Decrement the number of attempts in the wild */
-	nA.Dec()
 }
 
 func xx() {
