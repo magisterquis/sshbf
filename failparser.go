@@ -50,6 +50,10 @@ func handleNetOpError(a attempt, rc chan attempt, nA *lockedint.TInt,
 	case strings.HasSuffix(s, "connection timed out"):
 		/* No SYNACK */
 		removeHost(ts, a, "connection timed out", nA)
+	case strings.HasSuffix(s, "invalid argument"):
+		removeHost(ts, a, "invalid host", nA)
+	case strings.HasSuffix(s, "no route to host"):
+		removeHost(ts, a, "no route to host", nA)
 	default:
 		return false
 	}
@@ -74,6 +78,9 @@ func handleErrorString(a attempt, rc chan attempt, nA *lockedint.TInt,
 		removeHost(ts, a, "packet to large", nA)
 	case strings.HasSuffix(s, "ssh: handshake failed: EOF"):
 		removeHost(ts, a, "unexpected EOF", nA)
+	case strings.HasPrefix(s, "ssh: handshake failed: read tcp") &&
+		strings.HasSuffix(s, "connection reset by peer"):
+		removeHost(ts, a, "connection reset by target", nA)
 	default:
 		return false
 	}

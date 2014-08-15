@@ -80,7 +80,7 @@ func channelAttemptMaker(templates *tslist.List, passwordc chan string,
 				a, ok := e.Value().(*template)
 				if !ok {
 					printTemplateNotOk(e)
-					es.Exit(-14)
+					os.Exit(-14)
 				}
 				attemptc <- a.New(p, version)
 			}
