@@ -36,8 +36,12 @@ var IPL []string = []string{"admin", "password", "1234", "12345", "123456",
 /* Waitgroup to signal end of execution */
 var WG sync.WaitGroup
 
-/* Global command channel map */
+/* Global command channel map and lock */
 var C2CHANS *tsmap.Map
+var C2CHANL sync.RWMutex
+
+/* Templates */
+var TEMPLATES []Template
 
 /* TODO: .sshbfrc file */
 
@@ -66,18 +70,17 @@ var gc struct {
 	Tries *bool
 	//	Stdinf *bool
 	Plist *bool
-		Sfile *string
-	//	Onepwf *bool
-	//	Errdbf *bool
+	Sfile *string
+	Onepw *bool
+	Errdb *bool
 	//	Pausef *time.Duration
 	Wait *time.Duration
 	//	Askipf *int
-	//	Rteoff *bool
+	Rteof *bool
 	Userl *bool
 	Helpl *bool
 	Helps *bool
 	Cport *string
-	Clist *bool
 	Cwait *bool
 }
 
@@ -124,12 +127,12 @@ func main() {
 	gc.Pback = flag.Bool("pback", false, "Attempt the username backwards "+
 		"as the password as well as other specified passwords.  "+
 		"E.g. root -> toor.")
-	gc.Sshvs = flag.String("sshvs", "SSH-2.0-sshbf_0.0.1", "SSH version "+
+	gc.Sshvs = flag.String("sshvs", "SSH-2.0-sshbf_0.0.2", "SSH version "+
 		"string to present to the server.")
-	gc.Htask = flag.Int("htask", 8, "Number of concurrent attempts, per "+
-		"host if different from -gtask.  0 will spawn as many "+
-		"concurrent attacks as -gtask allows.")
-	gc.Gtask = flag.Int("gtask", 0, "Total number of concurrent "+
+	gc.Htask = flag.Int("htask", 8, "Maximum umber of concurrent "+
+		"attempts per host if different from -gtask.  0 will spawn "+
+		"as many concurrent attacks as -gtask allows.")
+	gc.Gtask = flag.Int("gtask", 500, "Maximum number of concurrent "+
 		"attempts.  If zero, an unlimited number of attacks are "+
 		"allowed.")
 	//	gc.Ntaskf = flag.Int("ntask", 4, "Number of attempts (tasks) to run in "+
@@ -140,20 +143,20 @@ func main() {
 	//		"stdin.  NOT CURRENTLY IMPLEMENTED.")
 	gc.Plist = flag.Bool("plist", false, "Print the internal default "+
 		"password list and exit.")
-	//	gc.Sfilef = flag.String("sfile", "", "Append successful "+
-	//		"authentications to this file, which whill be flock()'d to "+
-	//		"allow for multiple processes to write to it in parallel.")
-	//	gc.Onepwf = flag.Bool("onepw", false, "Only find one username/password "+
-	//		"pair per host.")
-	//	gc.Errdbf = flag.Bool("errdb", false, "Print debugging information "+
-	//		"relevant to errors made during SSH attempts.")
+	gc.Sfile = flag.String("sfile", "", "Append successful "+
+		"authentications to this file, which whill be flock()'d to "+
+		"allow for multiple processes to write to it in parallel.")
+	gc.Onepw = flag.Bool("onepw", false, "Only find one username/password "+
+		"pair per host.")
+	gc.Errdb = flag.Bool("errdb", false, "Print debugging information "+
+		"relevant to errors made during SSH attempts.")
 	//	gc.Pausef = flag.Duration("pause", 0, "Pause this long between "+
 	//		"attempts.  Really only makes sense if -ntask=1 is used.")
 	//	gc.Askipf = flag.Int("askip", 0, "Skip this many attacks at the "+
 	//		"beginning.  Useful if -host is used and a network error "+
 	//		"occurred.")
-	//	gc.Rteoff = flag.Bool("rteof", false, "Sleep 1s and Retry attempts "+
-	//		"that have generated an EOF error.")
+	gc.Rteof = flag.Bool("rteof", true, "Sleep 1s and Retry attempts "+
+		"that have generated an EOF error.")
 	deftimeoutd, err := time.ParseDuration(deftimeout)
 	if err != nil {
 		fmt.Printf("Invalid default wait duration.\n\n.")
@@ -168,12 +171,10 @@ func main() {
 	gc.Helps = flag.Bool("h", false, "Print help.")
 	gc.Helpl = flag.Bool("help", false, "Print help.")
 	gc.Cport = flag.String("cport", "", "Port (or address) on which to "+
-		"listen for commands.  Default is to not listen.")
-	gc.Clist = flag.Bool("clist", false, "Print a list of commands "+
-		"suitable for use with -cport and exit.")
+		"listen for commands.  Default is to not listen.  The "+
+		"command h prints help.")
 	gc.Cwait = flag.Bool("cwait", false, "Wait for more commands after "+
 		"last target has been attacked.")
-	/* TODO: Finish Clist */
 	flag.Parse()
 
 	/* Print usage if no arguments */
@@ -272,7 +273,7 @@ func main() {
 			temps = append(temps, t)
 		}
 	}
-	templates = temps
+	TEMPLATES = temps
 
 	/* Get a list of targets and CIDR ranges */
 	ih := flag.Args()
@@ -310,9 +311,7 @@ func main() {
 	}
 	/* Make sure the targets have ports */
 	for i, t := range targets {
-		if _, _, err := net.SplitHostPort(t); err != nil {
-			targets[i] = net.JoinHostPort(t, "22")
-		}
+		targets[i] = addDefaultPort(t)
 	}
 	/* Deduplicate slice */
 	targets = deDupe(targets)
@@ -330,15 +329,26 @@ func main() {
 	/* Command channels */
 	C2CHANS = tsmap.New()
 
+	/* Waitgroup to wait for goroutine initialization */
+	var init sync.WaitGroup
+
 	/* Start taskmaster */
-	go taskmaster()
+	init.Add(1)
+	go taskmaster(&init)
+	init.Wait()
 
 	/* Start a goroutine to listen for new commands */
+	if *gc.Cwait && 0 == len(*gc.Cport) {
+		log.Printf("Cannot use -cwait without -cport.")
+		os.Exit(-3)
+	}
 	if *gc.Cport != "" {
 		if *gc.Cwait {
 			WG.Add(1)
 		}
-		go listener()
+		init.Add(1)
+		go listener(&init)
+		init.Wait()
 	}
 
 	/* Give the user warm fuzzies that we're starting */
@@ -361,8 +371,7 @@ func main() {
 	/* TODO: Log somewere other than stderr, if requested. */
 	/* Start a hostmaster for each host */
 	for _, t := range targets {
-		WG.Add(1)
-		go hostmaster(t, templates, nil)
+		go hostmaster(t)
 	}
 
 	/* Wait until everything is done */
