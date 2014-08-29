@@ -16,7 +16,6 @@ import (
 
 /* Start a series of attacks on addr. */
 func hostmaster(addr string) {
-	WG.Add(1)
 	defer WG.Done()
 	nRunning := 0              /* Number of active attempts */
 	nMax := *gc.Htask          /* Mx number of simultanous attempts */
@@ -147,11 +146,10 @@ HMLoop:
 			//case <-time.After(5 * time.Minute): /* DEBUG */
 			//log.Printf("[%v] Still waiting", addr) /* DEBUG */
 		}
-		///* Give up if we're done */
-		//if 0 == tlist.Len() && 0 == nRunning && !suc {
-		//	log.Printf("%v: Out of guesses.", addr)
-		//	break
-		//}
+		/* Give up if we're done */
+		if 0 == tlist.Len() && 0 == nRunning {
+			break
+		}
 	}
 	/* Read remaining attempts to avoid deadlock */
 	go func() {
@@ -256,41 +254,47 @@ func logSuccess(a *Attempt) {
 
 /* Handle errors of type *net.OpError */
 func handleNetOpError(a *Attempt) (ab, re, fa, un, uh bool) {
+	estr := a.Err.Error()
 	switch {
-	case strings.HasSuffix(a.Err.Error(), "connection refused"):
+	case strings.HasSuffix(estr, "connection refused"):
 		log.Printf("[%v] No longer attacking %v: connection refused",
 			a.Tasknum, a.Host)
 		ab = true
-	case strings.HasSuffix(a.Err.Error(), "host is down"):
+	case strings.HasSuffix(estr, "host is down"):
 		log.Printf("[%v] No longer attacking %v: host is down",
 			a.Tasknum, a.Host)
 		ab = true
-	case strings.HasSuffix(a.Err.Error(), "connection timed out"):
+	case strings.HasSuffix(estr, "connection timed out"):
 		log.Printf("[%v] No lonnger attacking %v: connection timed "+
 			"out", a.Tasknum, a.Host)
 		ab = true
-	case strings.HasSuffix(a.Err.Error(), "too many open files"):
+	case strings.HasSuffix(estr, "too many open files"):
 		log.Printf("[%v] Too many open files (or network "+
 			"connections).  Consider setting -gtask to a lower "+
 			"number.  Will retry %v against %v@%v.", a.Tasknum,
 			a.Pass, a.Config.User, a.Host)
 		re = true
-	case strings.HasSuffix(a.Err.Error(), "no route to host"):
+	case strings.HasSuffix(estr, "no route to host"):
 		log.Printf("[%v] No longer attacking %v: no route to host",
 			a.Tasknum, a.Host)
 		ab = true
-	case strings.HasPrefix(a.Err.Error(), "dial tcp") &&
-		strings.HasSuffix(a.Err.Error(), "invalid argument"):
+	case strings.HasPrefix(estr, "dial tcp") &&
+		strings.HasSuffix(estr, "invalid argument"):
 		log.Printf("[%v] Unable to attack %v: invalid address",
 			a.Tasknum, a.Host)
 		ab = true
-	case strings.HasPrefix(a.Err.Error(), "dial tcp: lookup") &&
-		strings.HasSuffix(a.Err.Error(), ": no such host"):
+	case strings.HasPrefix(estr, "dial tcp: lookup") &&
+		strings.HasSuffix(estr, ": no such host"):
 		log.Printf("[%v] Unable to resolve %v", a.Tasknum, a.Host)
 		ab = true
-	case "dial tcp: missing port in address google.com" == a.Err.Error():
+	case "dial tcp: missing port in address google.com" == estr:
 		log.Printf("[%v] Unable to attack %v: missing port", a.Tasknum,
 			a.Host)
+		ab = true
+	case strings.HasPrefix(estr, "dail tcp: lookup ") &&
+		stringns.HasSuffix(": invalid domain name"):
+		log.Printf("[%v] Unable to attack %v: invalid domain name",
+			a.Tasknum, a.Host)
 		ab = true
 	default:
 		uh = true
@@ -335,6 +339,23 @@ func handleGenericError(a *Attempt) (ab, re, fa, un, uh bool) {
 		} else {
 			log.Printf("[%v] No longer attacking %v: EOF",
 				a.Tasknum, a.Host)
+			ab = true
+		}
+	case a.Err.Error() == "ssh: handshake failed: ssh: no common "+
+		"algorithms":
+		log.Printf("[%v] No longer attacking %v: no common "+
+			"algorithms.", a.Tasknum, a.Host)
+		ab = true
+	case a.Err.Error() == "ssh: handshake failed: ssh: invalid packet "+
+		"length, packet too large":
+		if *gc.Rteof {
+			log.Printf("[%v] Retrying %v against %v@%v after "+
+				"receiving a packat that was too large.",
+				a.Tasknum, a.Pass, a.Config.User, a.Host)
+			re = true
+		} else {
+			log.Printf("[%v] No longer attacking %v: received "+
+				"packet that was too large", a.Tasknum, a.Host)
 			ab = true
 		}
 	default:
