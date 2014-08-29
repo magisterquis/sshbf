@@ -1,0 +1,8 @@
+Interactive commands:
+        List active attacks
+        Quit
+Fix out of guesses message when password found
+# Make sorting work for l command
+# Actually kill hostmasters when they're done
+Add fails file.
+Have hostmaster die if an address fails resolution
