@@ -46,7 +46,7 @@ var TEMPLATES []Template
 /* TODO: .sshbfrc file */
 
 /* Default connect timeout */
-var deftimeout string = "2m"
+var deftimeout string = "5m"
 
 //var retrywait string = "1s"
 
@@ -156,7 +156,7 @@ func main() {
 	//		"beginning.  Useful if -host is used and a network error "+
 	//		"occurred.")
 	gc.Rteof = flag.Bool("rteof", true, "Sleep 1s and Retry attempts "+
-		"that have generated an EOF error.")
+		"that have generated an EOF error or other temporary errors.")
 	deftimeoutd, err := time.ParseDuration(deftimeout)
 	if err != nil {
 		fmt.Printf("Invalid default wait duration.\n\n.")
@@ -371,6 +371,7 @@ func main() {
 	/* TODO: Log somewere other than stderr, if requested. */
 	/* Start a hostmaster for each host */
 	for _, t := range targets {
+		WG.Add(1)
 		go hostmaster(t)
 	}
 
