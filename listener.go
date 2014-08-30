@@ -140,12 +140,18 @@ func handle(c *net.TCPConn) {
 		switch cmd[0] {
 		case "a": /* Attack */
 			f = handleA
-		case "m": /* Max attacks */
-			f = handleM
 		case "s": /* Stop */
 			f = handleS
-                case "l": /* List */
-f = handleL
+		case "l": /* List */
+			f = handleL
+		case "g": /* Global info */
+			f = handleG
+		case "i": /* Info */
+			f = handleI
+		case "m": /* Max attacks */
+			f = handleM
+		case "M": /* Max total attacks */
+			f = handleMM
 		case "k":
 			log.Printf("Killed by %v", c.RemoteAddr())
 			os.Exit(0)
@@ -165,10 +171,13 @@ f = handleL
 func handleH(c *net.TCPConn, cmd []string) {
 	wl(c, "Commands:")
 	wl(c, "\ta - Attack a host or hosts")
-	wl(c, "\tm - Get or set the maximum number of concurrant attacks "+
-		"against a host")
 	wl(c, "\ts - Stop an attack on a host or hosts")
 	wl(c, "\tl - List attacks in progress")
+	wl(c, "\tg - Display global information.")
+	wl(c, "\ti - Display information about an attack or attacks")
+	wl(c, "\tm - Get or set the maximum number of concurrent attacks "+
+		"against a host")
+	wl(c, "\tM - Get or set maximum number of concurrant attacks globally")
 	wl(c, "\tk - Kill sshbf")
 	wl(c, "\tq - Exit (quit) this command session")
 	wl(c, "\th - This help")
@@ -182,6 +191,7 @@ func handleA(c *net.TCPConn, cmd []string) {
 		wl(c, "Attack Usage:")
 		wl(c, "\ta host [host [host...]]")
 		wl(c, "Attacks a host or hosts.")
+		return
 	}
 	/* Spawn hostmasters for each host on the list */
 	for _, h := range cmd[1:] {
@@ -190,6 +200,56 @@ func handleA(c *net.TCPConn, cmd []string) {
 		wf(c, "Attacking %v\n", h)
 		WG.Add(1)
 		go hostmaster(h)
+	}
+}
+
+/* Send the list of running attacks */
+func handleL(c *net.TCPConn, cmd []string) {
+	/* Get the list of keys */
+	tasks := C2CHANS.Keys()
+	/* Sort */
+	i, s := ipsorter.Sort(tasks, true)
+	stasks := append(i, s...)
+	/* Header */
+	wf(c, "%v attacks:\n", len(stasks)-1) /* -1 for taskmaster */
+	wf(c, "%4v %32v %4v\n", "#", "Target", "m")
+	/* Print each target */
+	for i, t := range stasks {
+		/* Ignore taskmaster */
+		if "taskmaster" == t {
+			continue
+		}
+		m := wc(c, t, "m", true)
+		wf(c, "%4v %32v %4v\n", i, t, m)
+	}
+}
+
+/* Print global information */
+func handleG(c *net.TCPConn, cmd []string) {
+	/* Running */
+	wf(c, "%v\n", wc(c, "taskmaster", "g", true))
+}
+
+/* Print info on a host */
+func handleI(c *net.TCPConn, cmd []string) {
+	/* Usage */
+	if 1 == len(cmd) {
+		wl(c, "Info Usage:")
+		wl(c, "\ti target [target [target...]]")
+		wl(c, "Displays information about an attack or attacks.")
+		return
+	}
+	/* Spawn hostmasters for each host on the list */
+	for _, h := range cmd[1:] {
+		/* Add port */
+		h := addDefaultPort(h)
+		/* Ask for an update */
+		i := wc(c, h, "i", true)
+		if "" == i { /* Not an attack */
+			continue
+		}
+		/* Print it */
+		wf(c, "%v: %v\n", h, i)
 	}
 }
 
@@ -217,21 +277,28 @@ func handleM(c *net.TCPConn, cmd []string) {
 	}
 }
 
-/* Send the list of running attacks */
-func handleL(c *net.TCPConn, cmd []string) {
-        /* Get the list of keys */
-        tasks := C2CHANS.Keys()
-        /* Sort */
-        i, s := ipsorter.Sort(tasks, true)
-        stasks := append(i, s...)
-        /* Header */
-        wf(c, "%v attacks:\n", len(stasks))
-        wf(c, "%4v %32v %4v\n", "#", "Target", "m")
-        /* Print each target */
-        for i, t := range stasks {
-                m := wc(c, t, "m", true)
-                wf(c, "%4v %32v %4v\n", i, t, m)
-        }
+/* Set the maximum number of concurrent attacks */
+func handleMM(c *net.TCPConn, cmd []string) {
+	/* Usage */
+	switch len(cmd) {
+	case 1: /* Get */
+		n := wc(c, "taskmaster", "m", true)
+		wf(c, "%v\n", n)
+	case 2: /* Set */
+		n, err := strconv.Atoi(cmd[1])
+		if err != nil {
+			wf(c, "Unable to parse %v: %v", cmd[1], err)
+			break
+		}
+		wc(c, "taskmaster", fmt.Sprintf("m %v", n), false)
+
+	default:
+		wl(c, "Max (global) Usage:")
+		wl(c, "\tm")
+		wl(c, "Gets the number of global concurrent attacks.")
+		wl(c, "\tm max")
+		wl(c, "Sets the number of global concurrent attacks.")
+	}
 }
 
 /* Stop an attack in progress */
@@ -241,6 +308,7 @@ func handleS(c *net.TCPConn, cmd []string) {
 		wl(c, "Stop Usage:")
 		wl(c, "\ta host [host [host...]]")
 		wl(c, "stops an attack on a host or hosts.")
+		return
 	}
 	/* Spawn hostmasters for each host on the list */
 	for _, h := range cmd[1:] {
@@ -267,10 +335,14 @@ func wc(c *net.TCPConn, cname string, s string, res bool) string {
 	/* Lock the C2CHAN for reading */
 	C2CHANL.RLock()
 	defer C2CHANL.RUnlock()
-	/* Add a port, if needed */
-	cname = addDefaultPort(cname)
 	/* Try to get the channel */
 	ch, ok := C2CHANS.Get(cname)
+	/* Add a port, if needed */
+	if !ok {
+		cname = addDefaultPort(cname)
+	}
+	/* Try to get the channel:port */
+	ch, ok = C2CHANS.Get(cname)
 	/* If we failed, tell the user and give up */
 	if !ok {
 		wf(c, "%v does not seem to be a valid attack in progress.\n",
