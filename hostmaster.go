@@ -49,11 +49,11 @@ func hostmaster(addr string) {
 	/* TODO: Make verbose flag */
 	//log.Printf("Starting up to %v attacks in parallel against %v",
 	//      *gc.Htask, addr)
+	suc := false /* True if we've had a success */
 
 	/* Main loop */
 HMLoop:
 	for {
-                suc := bool /* True if we've had a success */
 		//log.Printf("[%v] Loop: nR: %v", addr, nRunning) /* DEBUG */
 		/* Send channel */
 		var sc chan *Attempt
@@ -106,6 +106,15 @@ HMLoop:
 							addr, n)
 					}
 				}
+			case strings.HasPrefix(c, "i"): /* Info */
+				/* Nice success string */
+				s := "F"
+				if suc {
+					s = "F"
+				}
+				r := fmt.Sprintf("[Running: %v][Max: "+
+					"%v][Success: %v]", nRunning, nMax, s)
+				c2 <- r
 			default:
 				log.Printf("Hostmaster %v command "+
 					"received: %v", addr, c) /* DEBUG */
@@ -117,7 +126,9 @@ HMLoop:
 			/* Handle the finished attempt.  At the moment, we
 			   only need to do something with the third returned
 			   value. */
-			ab, re, fa, un, suc := handleFinished(a)
+
+			ab, re, fa, un, sc := handleFinished(a)
+			suc = sc
 			//log.Printf("[%v] Attempt Handled (ab:%v re:%v fa:%v un:%v): %v", addr, ab, re, fa, un, *a) /* DEBUG */
 			/* Abort */
 			if ab {
@@ -160,8 +171,10 @@ HMLoop:
 		}
 	}()
 	log.Printf("%v Done", addr) /* DEBUG */
-        /* Log unsuccessful attempts to file (maybe) */
-        go appendLine(*gc.Ffile, addr)
+	/* Log unsuccessful attempts to file (maybe) */
+	if !suc {
+		go appendLine(*gc.Ffile, fmt.Sprintf("%v\n", addr))
+	}
 }
 
 /* Handle a finished attempt.  Any logging should happen before handleFinished
@@ -217,12 +230,12 @@ func handleFinished(a *Attempt) (abort, retry, fail, remuser, suc bool) {
 }
 
 /* Append a line to a file f, locking it first.  Will return if f is empty */
-func appendLine(f, line string) {
-	if 0 == len(f) {
+func appendLine(fname, line string) {
+	if 0 == len(fname) {
 		return
 	}
 	/* Try to open the successes file */
-	f, err := os.OpenFile(f, os.O_WRONLY|os.O_APPEND|os.O_CREATE,
+	f, err := os.OpenFile(fname, os.O_WRONLY|os.O_APPEND|os.O_CREATE,
 		0644)
 	/* Close on return */
 	defer f.Close()
@@ -239,12 +252,12 @@ func appendLine(f, line string) {
 	/* Release it when we're done */
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	/* Write line to file */
-	r, err := f.WriteString(s)
+	r, err := f.WriteString(line)
 	if err != nil {
 		log.Printf("Error writing %\"%v\" to %v: %v", line, f,
 			err)
 	}
-	if r < len(s) {
+	if r < len(line) {
 		log.Printf("Only wrote %v/%v bytes of \"%v\" to %v", r,
 			len(line),
 			line, f)
@@ -301,7 +314,7 @@ func handleNetOpError(a *Attempt) (ab, re, fa, un, uh bool) {
 			a.Host)
 		ab = true
 	case strings.HasPrefix(estr, "dail tcp: lookup ") &&
-		stringns.HasSuffix(": invalid domain name"):
+		strings.HasSuffix(estr, ": invalid domain name"):
 		log.Printf("[%v] Unable to attack %v: invalid domain name",
 			a.Tasknum, a.Host)
 		ab = true
