@@ -6,3 +6,8 @@ Fix out of guesses message when password found
 # Actually kill hostmasters when they're done
 # Add fails file.
 # Have hostmaster die if an address fails resolution
+Adaptive m per hostmaster
+# Get/set global number of tasks (M)
+Get running with m as well
+g shows number of hosts being attacked
+
