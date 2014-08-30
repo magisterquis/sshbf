@@ -71,6 +71,7 @@ var gc struct {
 	//	Stdinf *bool
 	Plist *bool
 	Sfile *string
+	Ffile *string
 	Onepw *bool
 	Errdb *bool
 	//	Pausef *time.Duration
@@ -146,6 +147,8 @@ func main() {
 	gc.Sfile = flag.String("sfile", "", "Append successful "+
 		"authentications to this file, which whill be flock()'d to "+
 		"allow for multiple processes to write to it in parallel.")
+	gc.Ffile = flag.String("ffile", "", "Append targets to this file if "+
+		"all attempts have failed against them.")
 	gc.Onepw = flag.Bool("onepw", false, "Only find one username/password "+
 		"pair per host.")
 	gc.Errdb = flag.Bool("errdb", false, "Print debugging information "+
