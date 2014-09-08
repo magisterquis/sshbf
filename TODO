@@ -9,5 +9,8 @@ Fix out of guesses message when password found
 Adaptive m per hostmaster
 # Get/set global number of tasks (M)
 Get running with m as well
+Better l output
 g shows number of hosts being attacked
+Track number of retries
+Keep track of how long hostmasters take to execute
 
