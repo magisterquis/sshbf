@@ -1,3 +1,6 @@
+THERE IS A VERSION 2 IN THE WORKS.  EXPECT INTERFACE CHANGES
+============================================================
+
 sshbf
 =====
 
